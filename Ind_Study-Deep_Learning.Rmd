@@ -1,0 +1,519 @@
+---
+title: "Deep Learning (Independent Study)"
+author: "Saheed Adisa, Ganiyu"
+date: "2023-10-20"
+output:
+  html_document:
+    df_print: paged
+---
+
+# 7. Fit a neural network to the Default data. Use a single hidden layer with 10 units, and dropout regularization. Have a look at Labs 10.9.1–10.9.2 for guidance. Compare the classifcation performance of your model with that of linear logistic regression.
+
+
+## Loading the Default dataset
+```{r }
+library(ISLR2)
+default_data <- Default
+head(default_data)
+```
+
+
+
+### Data summary and structure
+```{r }
+#summary(default_data)
+str(default_data)
+```
+
+
+## Spliting the data
+```{r }
+test_indices <- sample(1:nrow(default_data), 0.25*nrow(default_data))
+
+# Create the training and test datasets
+train_data <- default_data[-test_indices, ]
+test_data <- default_data[test_indices, ]
+```
+
+
+# =============== Logistic Regression =======================
+
+## Fitting logistic regression
+```{r }
+logistic_model <- glm(default ~ ., data = train_data, family = binomial(link = "logit"))
+logistic_training_probabilities <- predict(logistic_model, type = "response", newdata = test_data)
+logistic_pred <- ifelse(logistic_training_probabilities > 0.5, "Yes", "No")
+logistic_accuracy <- mean(logistic_pred == test_data$default)
+cat("Logistic Regression Accuracy:", logistic_accuracy*100,"%")
+```
+
+
+
+# =================== Neural  network ========================
+
+## Neural Network Visualization
+```{r }
+library(magrittr)  # for %<>% operator
+library(dplyr)
+library(neuralnet)
+default_data2 <- Default
+
+# converting factor variable into numeric
+default_data2$default <- ifelse(default_data2$default == "Yes", 1, 0)
+default_data2$student <- ifelse(default_data2$student == "Yes", 1, 0)
+
+# creating neural model
+neural_model <- neuralnet(default ~ .,
+                          data = default_data2,
+                          hidden = 10,
+                          linear.output = F,
+                          lifesign = "full",
+                          rep = 1)
+plot(neural_model,
+     col.hidden = 'darkgreen',
+     col.hidden.synapse = 'darkgreen',
+     show.weights = F,
+     information = F,
+     fill = 'orange')
+
+```
+
+
+
+## Spliting the dataset and normalizing
+```{r }
+default_data2 <- as.matrix(default_data2)    # converting to matrix
+train_data2 <- default_data2[-test_indices, 2:4]
+test_data2 <- default_data2[test_indices, 2:4]
+y_train2 <- default_data2[-test_indices, 1]
+y_test2 <- default_data2[test_indices, 1]
+
+# Normalizing
+m <- colMeans((train_data2))
+s<- apply(train_data2, 2, sd)
+train_data2 <- scale(train_data2, center = m, scale = s)
+test_data2 <- scale(test_data2, center = m, scale = s)
+```
+
+
+
+## Creating Neural model with keras package
+```{r }
+library(keras)
+k_neural_model <- keras_model_sequential()
+k_neural_model %>% 
+  layer_dense(units = 10, activation = 'relu', input_shape = c(3)) %>%
+  layer_dropout(rate = 0.4) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+summary(k_neural_model)
+```
+
+
+
+## Compiling and fitting the model
+```{r }
+# Compile
+k_neural_model%>% compile(loss = "binary_crossentropy",
+optimizer = optimizer_rmsprop(),
+metrics = c("accuracy"))
+
+# Fitting
+system.time(
+history <- k_neural_model %>%
+fit(train_data2, y_train2, epochs = 50, batch_size = 32,
+validation_data = list(test_data2, y_test2)))
+
+# Evaluate the model
+eval <- k_neural_model %>% evaluate(test_data2, y_test2)
+cat("Test accuracy:", eval[2], "\n")
+plot(history, smooth = FALSE)
+```
+
+
+## Creating Neural model with keras package for tuning number of units and batch_sizes
+```{r }
+library(keras)
+
+units_list <- c(5,10,15,20,25)
+batch_size_list <- c(16,20,24,28,32,36,40)
+accuracy_errors <- matrix(0, nrow = length(units_list), ncol = length(batch_size_list))
+
+for (b in 1:length(batch_size_list)) {
+  for (u in 1:length(units_list)) {
+    library(keras)
+    # Creating the model
+    k_neural_model <- keras_model_sequential()
+    k_neural_model %>% 
+      layer_dense(units = u , activation = 'relu', input_shape = c(3)) %>%
+      layer_dropout(rate = 0.3) %>%
+      layer_dense(units = 1, activation = "sigmoid")
+
+    # Compile
+    k_neural_model%>% compile(loss = "binary_crossentropy",
+    optimizer = optimizer_rmsprop(),
+    metrics = c("accuracy"))
+
+    # Fitting
+    history <- k_neural_model %>%
+    fit(train_data2, y_train2, epochs = 50, batch_size = 32,
+    validation_data = list(test_data2, y_test2), verbose = 0)
+
+    # Evaluate the model
+    eval <- k_neural_model %>% evaluate(test_data2, y_test2)
+    accuracy_errors[u, b] <- eval[2]
+  }
+}
+
+columnname <- c("B_size=16", "B_size=20", "B_size=24", "B_size=28", "B_size=32"
+                , "B_size=36", "B_size=40")
+rowname <- c("units=5", "units=10" , "units=15", "units=20", "units=25")
+
+colnames(accuracy_errors) <- columnname
+rownames(accuracy_errors) <- rowname   
+```
+
+```{r }
+accuracy_errors
+```
+
+
+
+## Creating Neural model with keras package with 2 layers
+```{r }
+ library(keras)
+# Creating the model
+k_neural_model <- keras_model_sequential()
+k_neural_model %>% 
+  layer_dense(units = 10, activation = 'relu', input_shape = c(3)) %>%
+  layer_dense(units = 5, activation = 'relu') %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+summary(k_neural_model)
+
+# Compile
+k_neural_model%>% compile(loss = "binary_crossentropy",
+optimizer = optimizer_rmsprop(),
+metrics = c("accuracy"))
+
+# Fitting
+system.time(
+history <- k_neural_model %>%
+fit(train_data2, y_train2, epochs = 50, batch_size = 32,
+validation_data = list(test_data2, y_test2), verbose = 0))
+
+# Evaluate the model
+eval <- k_neural_model %>% evaluate(test_data2, y_test2)
+cat("Test accuracy:", eval[2], "\n")
+plot(history, smooth = FALSE)
+
+```
+
+**Comment:** We observed that Logistic regression with $97.36 \%$ accuracy slightly perform better of Neural network of $97.68\%$ accuracy, but when added another layer with 5 neurons, we achieved the same accuracy with Logistic Regression. The 3 layer we later created performed a bit lower to others with $96.64\%$ accuracy.
+
+**Observation:** softmax activation function perform poorly in output layer with $32\%$ accuracy.
+
+
+
+
+
+## 5. Download the zip code data set from the book homepage. For both training and test sets, you need to unzip the files first and then load them into $\mathrm{R}$. Consider the 10-class classification problems with $Y \in\{0,1, \cdots, 9\}$. Apply LDA, the knn with $k=1,3,5,7,15$, respectively, and CNN. Report the training and test errors for LDA and $\mathrm{knn}$ with each choice of $k$. Summarize your findings.
+
+# fitting LDA model
+```{r }
+library(MASS)  # for LDA
+# Loading the dataset
+train_data <- read.table("zip.train", sep = "")
+test_data <- read.table("zip.test", sep = "")
+
+# Function to calculate the error rate
+calculate_error <- function(true_labels, predicted_labels) {
+  return (mean(true_labels != predicted_labels))
+}
+
+lda_model <- lda(V1 ~ ., data = train_data)
+lda_train_pred <- predict(lda_model, train_data)$class
+lda_test_pred <- predict(lda_model, test_data)$class
+lda_train_error <- calculate_error(train_data$V1, lda_train_pred)
+lda_test_error <- calculate_error(test_data$V1, lda_test_pred)
+cat("================== Training and testing errors ==================\n")
+cat(paste("LDA Train Error:", lda_train_error, "\t LDA Test Error:", lda_test_error, "\n"))
+
+```
+
+
+
+
+# fitting k-NN classification for part
+```{r }
+library(class)  # for k-NN
+k_values <- c(1, 3, 5, 7, 15)
+cat("================== Training and testing errors ==================\n")
+for (k in k_values) {
+  knn_train_pred <- knn(train_data[, -1], train_data[, -1], train_data$V1, k)
+  knn_train_error <- calculate_error(train_data$V1, knn_train_pred)
+  knn_test_pred <- knn(train_data[, -1], test_data[, -1], train_data$V1, k)
+  knn_test_error <- calculate_error(test_data$V1, knn_test_pred)
+  cat(paste("\n k =", k, "\t k-NN Train Error:", knn_train_error, "\t k-NN Test Error:", knn_test_error, "\n"))
+}
+
+```
+
+
+
+# =============== Fitting CNN ============================
+```{r }
+library(keras)
+x_train_data <-as.matrix( train_data[,-1])
+y_train_data <-train_data[,1]
+x_test_data <-as.matrix(test_data[,-1])
+y_test_data <-test_data[,1]
+dimnames(x_train_data) <- list(NULL, NULL)
+dimnames(x_test_data) <- list(NULL, NULL)
+x_train_data <- array_reshape(x_train_data, dim = c(nrow(x_train_data), 16, 16, 1))
+x_test_data <- array_reshape(x_test_data, dim = c(nrow(x_test_data), 16, 16, 1))
+
+
+# one-hot encoding
+y_train_data2 <- to_categorical(y_train_data, 10)
+y_test_data2 <- to_categorical(y_test_data, 10)
+
+# creating the CNN network
+model <- keras_model_sequential() %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3),
+                padding = "same", activation = "relu",
+                input_shape = c(16, 16, 1)) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3),
+                padding = "same", activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3),
+                padding = "same", activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 256, kernel_size = c(3, 3),
+                padding = "same", activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_flatten() %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 64, activation = "relu") %>%
+  layer_dense(units = 10, activation = "softmax")
+summary(model)
+```
+
+
+
+
+# Train the model
+```{r}
+model %>% compile(loss = "categorical_crossentropy",
+optimizer = optimizer_rmsprop(), metrics = c("accuracy"))
+history <- model %>% fit(x_train_data, y_train_data2, epochs = 30,
+                         batch_size = 64, validation_split = 0.2)
+test_pred<- k_argmax(model %>% predict(x_test_data)) 
+test_Error_CNN <- mean(drop(y_test_data)!=as.numeric(test_pred)) 
+cat("\n Test Error=", test_Error_CNN)
+```
+
+**Comment:** We observed that the CNN out perform bot LDA and KNN on the given zip code dataset.
+
+
+
+
+
+
+
+
+# 8. From your collection of personal photographs, pick 10 images of animals (such as dogs, cats, birds, farm animals, etc.). If the subject does not occupy a reasonable part of the image, then crop the image. Now use a pretrained image classifcation CNN as in Lab 10.9.4 to predict the class of each of your images, and report the probabilities for the top fve predicted classes for each image.
+
+## Loading the images and prepocessing
+```{r }
+library(jpeg)  # OR library(png)
+library(keras)
+img_dir <- "book_image"
+image_names <- list.files(img_dir)
+num_images <- length(image_names)
+x <- array(dim = c(num_images, 224, 224, 3))
+for (i in 1:num_images) {img_path <- paste(img_dir,
+                                           image_names[i], sep = "/")
+  img <- image_load(img_path, target_size = c(224, 224))
+  x[i,,, ] <- image_to_array(img)
+} 
+x <- imagenet_preprocess_input(x)
+```
+
+
+
+
+
+# Viewing the images
+```{r}
+library(jpeg)  # OR library(png)
+
+# List the image files in the directory
+image_files <- list.files(img_dir, pattern = "\\.(jpg|png|jpeg|gif|bmp)$", full.names = TRUE)
+
+# Take the first 10 image files 
+image_files <- head(image_files, 8)
+
+# Define the dimensions for each image
+image_width <- 6  # Adjust as needed
+image_height <- 6  # Adjust as needed
+
+# Create a blank canvas for the grid
+par(mfrow=c(2, 4), mar = c(0, 0, 0, 0))
+
+# Loop through the images and display them
+for (i in 1:8) {
+  img <- readJPEG(image_files[i])  # Use readJPEG for JPEG images or readPNG for PNG images
+  plot(0, 0, type = "n", axes = FALSE, xlab = "", ylab = "", xlim = c(0, image_width), ylim = c(0, image_height))
+  rasterImage(img, 0, 0, image_width, image_height)
+}
+
+# Reset the plot layout
+par(mfrow=c(1, 1))
+
+```
+
+
+
+## Fitting the model using pretrained model from resnet50
+```{r }
+CNN_model_pre <- application_resnet50(weights = "imagenet")
+#summary(CNN_model_pre)
+```
+
+
+
+## Predicting the 10 images
+```{r }
+pred6 <- CNN_model_pre %>% predict(x) %>%
+imagenet_decode_predictions(top = 3)
+names(pred6) <- image_names
+print(pred6)
+```
+
+
+
+
+```{r }
+
+```
+
+
+
+#==== Image classification using CNN model ======
+
+
+```{r }
+# Load Packages
+library(EBImage)
+library(keras)
+
+# Read images
+setwd('C:/Users/sahee/OneDrive/Desktop/Fall_2023/Ind_Study_STAT599/Helen_Rec/image15')
+pics <- c('p1.jpg', 'p2.jpg', 'p3.jpg', 'p4.jpg', 'p5.jpg', 'p6.jpg',
+          'c1.jpg', 'c2.jpg', 'c3.jpg', 'c4.jpg', 'c5.jpg', 'c6.jpg')
+mypic <- list()
+for (i in 1:12) {mypic[[i]] <- readImage(pics[i])}
+```
+
+
+### Vissualization
+```{r }
+display(mypic[[8]])
+summary(mypic[[1]])
+hist(mypic[[2]])
+str(mypic)
+```
+
+
+
+### Preprocessing
+```{r }
+# Resize
+for (i in 1:12) {mypic[[i]] <- resize(mypic[[i]],28,28)}
+
+# Reshape
+for (i in 1:12) {mypic[[i]] <- array_reshape(mypic[[i]], c(28, 28,3))}
+
+# Row Bind
+trainx <- NULL
+for (i in 1:5) {trainx <- rbind(trainx, mypic[[i]])}
+for (i in 7:11) {trainx <- rbind(trainx, mypic[[i]])}
+str(trainx)
+testx <- rbind(mypic[[6]], mypic[[12]])
+trainy <- c(0,0,0,0,0,1,1,1,1,1 )
+testx <- rbind(mypic[[6]], mypic[[12]])
+testy <- c(0,1)
+
+# One Hot Encoding
+trainLabels <- to_categorical(trainy)
+testLabels <- to_categorical(testy)
+```
+
+
+
+
+### Creating and compiling the model
+```{r }
+# Model
+model <- keras_model_sequential()
+model %>%
+         layer_dense(units = 256, activation = 'relu', input_shape = c(2352)) %>%
+         layer_dense(units = 128, activation = 'relu') %>%
+         layer_dense(units = 2, activation = 'softmax')
+summary(model)
+
+# Compile
+model %>%
+         compile(loss = 'binary_crossentropy',
+                 optimizer = optimizer_rmsprop(),
+                 metrics = c('accuracy'))
+```
+
+
+
+
+### Fitting the model
+```{r }
+# Fit Model
+history <- model %>%
+         fit(trainx,
+             trainLabels,
+             epochs = 30,
+             batch_size = 32,
+             validation_split = 0.2)
+```
+
+
+
+### Evaluation
+```{r }
+# Evaluation & Prediction - train data
+model %>% evaluate(trainx, trainLabels)
+pred <- as.numeric(k_argmax(model %>% predict(trainx)))
+table(Predicted = pred, Actual = trainy)
+prob <- model %>% predict(trainx)
+cbind(prob, Prected = pred, Actual= trainy)
+```
+
+
+
+```{r }
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+

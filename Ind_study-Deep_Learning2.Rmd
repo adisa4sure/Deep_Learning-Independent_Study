@@ -1,0 +1,189 @@
+---
+title: "Transfer Learning (Independent Study)"
+author: "Saheed Adisa, Ganiyu"
+date: "2023-10-20"
+output:
+  html_document:
+    df_print: paged
+---
+
+#====== Transfer Learning with CIFAR10 data using RESNET50====== 
+
+
+### Loading and processing CIFAR10 data
+```{r }
+# Libraries
+library(keras)
+library(EBImage)
+library(tensorflow)
+
+# CIFAR10 data
+data <- dataset_cifar10()
+trainx <- data$train$x[1:2000,,,]
+testx <- data$test$x[1:2000,,,]
+trainy <- to_categorical(data$train$y[1:2000,], num_classes = 10)
+testy <- to_categorical(data$test$y[1:2000,], num_classes = 10)
+
+
+# Data preprocessing
+x <- array(rep(0, 2000*224*224*3), dim = c(2000, 224, 224, 3))
+for (i in 1:2000) {x[i,,,] <- resize(trainx[i,,,], 224, 224)}
+trainx <- imagenet_preprocess_input(x)
+
+x <- array(rep(0, 2000*224*224*3), dim = c(2000, 224, 224, 3))
+for (i in 1:2000) {x[i,,,] <- resize(testx[i,,,], 224, 224)}
+testx <- imagenet_preprocess_input(x)
+```
+
+
+
+
+### Creating and compiling Model with RESNET50
+```{r }
+# Model with RESNET50
+pretrained <- application_resnet50(weights = 'imagenet',
+                                   include_top = FALSE,
+                                   input_shape = c(224, 224, 3))
+
+model <- keras_model_sequential() %>% 
+         pretrained %>% 
+         layer_flatten() %>% 
+         layer_dense(units = 256, activation = 'relu') %>% 
+         layer_dense(units = 10, activation = 'softmax')
+freeze_weights(pretrained)
+
+# Compile
+model %>% compile(loss = "categorical_crossentropy",
+                  optimizer = 'adam',
+                  metrics = 'accuracy')
+summary(model)
+```
+
+
+### Fitting the model
+```{r }
+# Fit model
+history <- model %>% fit(trainx,
+                         trainy,
+                         epochs = 10,
+                         batch_size = 10,
+                         validation_split = 0.2)
+```
+
+
+
+### Evaluation & prediction
+```{r }
+model %>% evaluate(testx, testy)
+pred <- as.numeric(k_argmax(model %>% predict(testx)))
+tab <- table(Predicted = pred, Actual = data$test$y[1:2000,])
+100*diag(tab)/colSums(tab)
+```
+
+
+
+
+```{r }
+tab
+cat("\n Test Accuracy=",sum(diag(tab))/sum(tab)*100,"\n")
+cat("\n Accuracy per class\n")
+100*diag(tab)/colSums(tab)
+```
+
+
+
+
+# ==================== Miscelleneous ================== 
+
+```{r }
+library(png)
+library(jpeg)  # OR library(png)
+
+# Specify the file paths for your images
+file_paths <- c("C:/Users/sahee/OneDrive/Desktop/Fall_2023/Ind_Study_STAT599/Helen_Rec/book_image/burrowing_owl.jpeg",
+                "C:/Users/sahee/OneDrive/Desktop/Fall_2023/Ind_Study_STAT599/Helen_Rec/book_image/cat.jpg",
+                "C:/Users/sahee/OneDrive/Desktop/Fall_2023/Ind_Study_STAT599/Helen_Rec/book_image/Hound_dog.jpeg",
+                "C:/Users/sahee/OneDrive/Desktop/Fall_2023/Ind_Study_STAT599/Helen_Rec/book_image/Lion.jpg")
+
+# Set up a 2x2 layout
+par(mfrow = c(2, 2), mar = c(1, 1, 1, 1))
+
+anim_names <- c("Owl", "Cat", "Dog", "Lion")
+
+# Display the images
+for (i in 1:4) {
+  img <- readJPEG(file_paths[i])
+  plot(1:2, type = "n", xlab = "", ylab = "", main = anim_names[i], axes = FALSE)
+  rasterImage(img, 1, 1, 2, 2)
+}
+
+# Reset the layout to default
+par(mfrow = c(1, 1))
+
+```
+
+
+
+
+
+## Loading the images and prepocessing
+```{r }
+library(jpeg)  # OR library(png)
+img_dir <- "book_image2"
+image_names <- list.files(img_dir)
+num_images <- length(image_names)
+x <- array(dim = c(num_images, 224, 224, 3))
+for (i in 1:num_images) {img_path <- paste(img_dir,
+                                           image_names[i], sep = "/")
+  img <- image_load(img_path, target_size = c(224, 224))
+  x[i,,, ] <- image_to_array(img)
+} 
+x <- imagenet_preprocess_input(x)
+```
+
+
+
+
+# Viewing the images
+```{r}
+library(jpeg)  # OR library(png)
+
+# List the image files in the directory
+image_files <- list.files(img_dir, pattern = "\\.(jpg|png|jpeg|gif|bmp)$", full.names = TRUE)
+
+# Take the first 10 image files (or adjust as needed)
+image_files <- head(image_files, 10)
+
+# Define the dimensions for each image
+image_width <- 6  # Adjust as needed
+image_height <- 6  # Adjust as needed
+
+# Create a blank canvas for the grid
+par(mfrow=c(2, 2), mar = c(2, 2, 2, 2))
+
+# Loop through the images and display them
+for (i in 1:4) {
+  img <- readJPEG(image_files[i])  # Use readJPEG for JPEG images or readPNG for PNG images
+  plot(0, 0, type = "n", axes = FALSE, xlab = "", ylab = "", xlim = c(0, image_width), ylim = c(0, image_height))
+  rasterImage(img, 0, 0, image_width, image_height)
+}
+
+# Reset the plot layout
+par(mfrow=c(1, 1))
+
+```
+
+
+
+
+## Fitting the model using pretrained model from resnet50
+```{r }
+CNN_model_pre <- application_resnet50(weights = "imagenet")
+#summary(CNN_model_pre)
+```
+
+
+
+
+
+
